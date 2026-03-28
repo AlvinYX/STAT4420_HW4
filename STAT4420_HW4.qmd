@@ -1,0 +1,97 @@
+---
+title: "STAT4420 Midterm"
+author: "Alvin Xu"
+date: today
+format:
+  pdf: default
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute: 
+  echo: false
+  warning: false
+  message: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library(pacman)
+p_load(tidyverse)
+```
+
+The data consists of the number of bikes $b_i$ and vehicles $v_i$ on ten
+different streets. We will focus on modeling $y_i = b_i + v_i$, the
+total total amount of traffic (i.e. bikes + vehicles) on each street
+(eg. $y_1 = 16 + 58 = 74$). Specifically, we consider the following
+model for the total amount of traffic $y_i$ on street $i$:
+
+$$\begin{aligned}
+y_i &\sim \text{Poisson}(\theta_i) \\
+\theta_i &\sim \text{Gamma}(\alpha, \beta)
+\end{aligned}$$
+
+# Question 1 (10 points)
+
+Use Bayes Rule to derive the formula for the joint posterior
+distribution $p(\alpha,\beta,\boldsymbol{\theta}|y)$ using a flat prior
+distribution for $\alpha$ and $\beta,p(\alpha,\beta)\propto1$.
+
+# Question 2 (10 points)
+
+We want to use a Gibbs sampler to get samples from the joint posterior
+distribution $p(\alpha,\beta,\theta|y)$.Derive the conditional
+distribution $p(\theta_{i}|\alpha,\beta,y)$ for each $\theta_{i}$ given
+all the other parameters.Derive the conditional distributions
+$p(\alpha|\boldsymbol{\theta},\beta,y)$ and
+$p(\beta|\boldsymbol{\theta},\alpha,y)$ for a and given all the other
+parameters.
+
+# Question 3 (10 points)
+
+The conditional distribution $p(\alpha|\boldsymbol{\theta},\beta,y)$ is
+non-standard, so you will need to use a Metropolis (or
+Metropolis-Hastings) step to obtain samples from
+$p(\alpha|\boldsymbol{\theta},\beta,y)$. Choose a proposal distribution
+for a and give the formula for the Metropolis (or Metropolis-Hastings)
+ratio $r$ with your choice of proposal distribution.
+
+# Question 4 (30 points)
+
+Combine the Metropolis step from Question 3 with the conditional
+distributions from Question 2 to form a Gibbs sampler, which iterates
+between:
+
+1.  sampling $\theta_{i}|\alpha,\beta,\boldsymbol{y}$ for each $i$
+2.  sampling $\beta|\alpha,\boldsymbol{\theta},\boldsymbol{y}$
+3.  sampling $\alpha|\beta,\boldsymbol{\theta},\boldsymbol{y}$
+
+Use your Gibbs sampler to obtain 1000 independent posterior samples from
+$p(\alpha,\beta,\boldsymbol{\theta}|\boldsymbol{y})$. Provide
+convergence plots involving multiple chains run from different starting
+points. How many burn-in iterations were needed to achieve convergence?
+For the Metropolis sampling of
+$\alpha|\beta,\boldsymbol{\theta},\boldsymbol{y}$, you should also give
+the values of any tuning parameter that you used and the acceptance rate
+you get with that value.
+
+# Question 5 (10 points)
+
+Give autocorrelation plots for each parameter from the chains you ran in
+Question 4 (after removing the burn-in iterations). How much thinning
+was needed to obtain independent samples?Code snippet# R code for
+autocorrelation plots and thinning analysis
+
+# Question 6 (15 points)
+
+Calculate the posterior means and 95% posterior intervals for a, and
+each $\theta_{i}$ and provide these values in a table.Code snippet# R
+code for posterior means and intervals
+
+# Question 7 (15 points)
+
+Use your posterior samples to calculate a 95% predictive interval for
+the total traffic on a new residential street with a bike lane.
