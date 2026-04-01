@@ -25,7 +25,7 @@ p_load(tidyverse)
 
 The data consists of the number of bikes $b_i$ and vehicles $v_i$ on ten
 different streets. We will focus on modeling $y_i = b_i + v_i$, the
-total total amount of traffic (i.e. bikes + vehicles) on each street
+total amount of traffic (i.e. bikes + vehicles) on each street
 (eg. $y_1 = 16 + 58 = 74$). Specifically, we consider the following
 model for the total amount of traffic $y_i$ on street $i$:
 
@@ -34,18 +34,37 @@ y_i &\sim \text{Poisson}(\theta_i) \\
 \theta_i &\sim \text{Gamma}(\alpha, \beta)
 \end{aligned}$$
 
+# EDA
+```{r}
+df <- read.table("bicycles.txt", header = TRUE)
+head(df)
+```
+
+
 # Question 1 (10 points)
 
 Use Bayes Rule to derive the formula for the joint posterior
 distribution $p(\alpha,\beta,\boldsymbol{\theta}|y)$ using a flat prior
 distribution for $\alpha$ and $\beta,p(\alpha,\beta)\propto1$.
 
+$$p(\alpha, \beta, \boldsymbol{\theta} | \boldsymbol{y}) \propto p(\boldsymbol{y} | \boldsymbol{\theta}) \cdot p(\boldsymbol{\theta} | \alpha, \beta) \cdot p(\alpha, \beta)$$
+$$p(\boldsymbol{y} | \boldsymbol{\theta}) \propto \prod_{i=1}^{10} \theta_i^{y_i} e^{-\theta_i}$$
+
+$$p(\boldsymbol{\theta} | \alpha, \beta) = \prod_{i=1}^{10} \frac{\beta^\alpha}{\Gamma(\alpha)} \theta_i^{\alpha-1} e^{-\beta \theta_i}$$
+
+$$p(\alpha, \beta) \propto 1$$
+Joint posterior distribution:
+$$p(\alpha, \beta, \boldsymbol{\theta} | \boldsymbol{y}) \propto \left( \prod_{i=1}^{10} \theta_i^{y_i} e^{-\theta_i} \right) \cdot \left( \prod_{i=1}^{10} \frac{\beta^\alpha}{\Gamma(\alpha)} \theta_i^{\alpha-1} e^{-\beta \theta_i} \right) \cdot 1$$
+
+Simplify:
+$$p(\alpha, \beta, \boldsymbol{\theta} | \boldsymbol{y}) \propto \left( \frac{\beta^\alpha}{\Gamma(\alpha)} \right)^{10} \left( \prod_{i=1}^{10} \theta_i^{y_i + \alpha - 1} \right) e^{-(1+\beta)\sum_{i=1}^{10} \theta_i}$$
+
 # Question 2 (10 points)
 
 We want to use a Gibbs sampler to get samples from the joint posterior
-distribution $p(\alpha,\beta,\theta|y)$.Derive the conditional
+distribution $p(\alpha,\beta,\theta|y)$. Derive the conditional
 distribution $p(\theta_{i}|\alpha,\beta,y)$ for each $\theta_{i}$ given
-all the other parameters.Derive the conditional distributions
+all the other parameters. Derive the conditional distributions
 $p(\alpha|\boldsymbol{\theta},\beta,y)$ and
 $p(\beta|\boldsymbol{\theta},\alpha,y)$ for a and given all the other
 parameters.
@@ -56,7 +75,7 @@ The conditional distribution $p(\alpha|\boldsymbol{\theta},\beta,y)$ is
 non-standard, so you will need to use a Metropolis (or
 Metropolis-Hastings) step to obtain samples from
 $p(\alpha|\boldsymbol{\theta},\beta,y)$. Choose a proposal distribution
-for a and give the formula for the Metropolis (or Metropolis-Hastings)
+for $\alpha$ and give the formula for the Metropolis (or Metropolis-Hastings)
 ratio $r$ with your choice of proposal distribution.
 
 # Question 4 (30 points)
@@ -82,14 +101,12 @@ you get with that value.
 
 Give autocorrelation plots for each parameter from the chains you ran in
 Question 4 (after removing the burn-in iterations). How much thinning
-was needed to obtain independent samples?Code snippet# R code for
-autocorrelation plots and thinning analysis
+was needed to obtain independent samples?
 
 # Question 6 (15 points)
 
 Calculate the posterior means and 95% posterior intervals for a, and
-each $\theta_{i}$ and provide these values in a table.Code snippet# R
-code for posterior means and intervals
+each $\theta_{i}$ and provide these values in a table.
 
 # Question 7 (15 points)
 
