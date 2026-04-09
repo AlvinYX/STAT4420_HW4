@@ -20,7 +20,7 @@ editor:
 
 ```{r}
 library(pacman)
-p_load(tidyverse)
+p_load(tidyverse, gridExtra, forecast)
 ```
 
 The data consists of the number of bikes $b_i$ and vehicles $v_i$ on ten
@@ -66,8 +66,31 @@ distribution $p(\alpha,\beta,\theta|y)$. Derive the conditional
 distribution $p(\theta_{i}|\alpha,\beta,y)$ for each $\theta_{i}$ given
 all the other parameters. Derive the conditional distributions
 $p(\alpha|\boldsymbol{\theta},\beta,y)$ and
-$p(\beta|\boldsymbol{\theta},\alpha,y)$ for a and given all the other
+$p(\beta|\boldsymbol{\theta},\alpha,y)$ for $\alpha$ and $\beta$ given all the other
 parameters.
+
+To find $p(\theta_i | \alpha, \beta, \boldsymbol{y})$, we should isolate the terms in the joint posterior that contain a specific $\theta_i$. We can ignore $\alpha$, $\beta$, and all other $\theta_{j \neq i}$ as they are treated as constants.$$p(\theta_i | \alpha, \beta, y_i) \propto \theta_i^{y_i + \alpha - 1} e^{-(1+\beta)\theta_i}$$
+
+$$p(\theta_i | \alpha, \beta, y_i) \propto \theta_i^{y_i + \alpha - 1} e^{-(1+\beta)\theta_i}$$
+The conditional distribution for each $\theta_{i}$ given all the other parameters is a Gamma distribution.
+
+$$\theta_i | \alpha, \beta, y_i \sim \text{Gamma}(y_i + \alpha, 1 + \beta)$$
+
+$$p(\beta | \boldsymbol{\theta}, \alpha, \boldsymbol{y}) \propto (\beta^\alpha)^{10} e^{-\beta \sum_{i=1}^{10} \theta_i}$$
+
+$$p(\beta | \boldsymbol{\theta}, \alpha, \boldsymbol{y}) \propto \beta^{10\alpha} e^{-\beta \sum_{i=1}^{10} \theta_i}$$
+
+$$p(\beta | \boldsymbol{\theta}, \alpha, \boldsymbol{y}) \propto \beta^{(10\alpha + 1) - 1} e^{-\beta \sum_{i=1}^{10} \theta_i}$$
+The conditional distribution for $\beta$ given all the other parameters is:
+
+$$\beta | \boldsymbol{\theta}, \alpha, \boldsymbol{y} \sim \text{Gamma}\left(10\alpha + 1, \sum_{i=1}^{10} \theta_i\right)$$
+
+$$p(\alpha | \boldsymbol{\theta}, \beta, \boldsymbol{y}) \propto \left( \frac{\beta^\alpha}{\Gamma(\alpha)} \right)^{10} \prod_{i=1}^{10} \theta_i^\alpha$$
+
+$$p(\alpha | \boldsymbol{\theta}, \beta, \boldsymbol{y}) \propto \frac{\beta^{10\alpha}}{\Gamma(\alpha)^{10}} \left( \prod_{i=1}^{10} \theta_i \right)^\alpha$$
+
+$$p(\alpha | \boldsymbol{\theta}, \beta, \boldsymbol{y}) \propto \frac{ \left( \beta^{10} \prod_{i=1}^{10} \theta_i \right)^\alpha}{\Gamma(\alpha)^{10}}$$
+We are unable to simplify the conditional distribution of $\alpha$ given all other parameters into a standard distribution, which is why we need to use the M-H algorithm.
 
 # Question 3 (10 points)
 
@@ -77,6 +100,18 @@ Metropolis-Hastings) step to obtain samples from
 $p(\alpha|\boldsymbol{\theta},\beta,y)$. Choose a proposal distribution
 for $\alpha$ and give the formula for the Metropolis (or Metropolis-Hastings)
 ratio $r$ with your choice of proposal distribution.
+
+Since $\alpha$ is a shape parameter for the Gamma distribution, it must be strictly positive ($\alpha > 0$). We can use a Normal distribution and reject negative values. The Normal distribution should be centered at $\alpha$.
+
+$$\alpha^* \sim \text{Normal}(\alpha^{(t-1)}, \sigma_{\text{tune}}^2)$$
+
+If $\alpha^* \leq 0$, when we will reject it. Because a Normal distribution is symmetric, the transition probabilities cancel out in the ratio: $q(\alpha^{(t-1)} | \alpha^*) = q(\alpha^* | \alpha^{(t-1)})$. Therefore, the Metropolis ratio $r$ simplifies to just the ratio of the target conditional posteriors.
+
+$$r = \frac{p(\alpha^* | \boldsymbol{\theta}, \beta, \boldsymbol{y})}{p(\alpha^{(t-1)} | \boldsymbol{\theta}, \beta, \boldsymbol{y})} = \frac{ \frac{\beta^{10\alpha^*}}{\Gamma(\alpha^*)^{10}} \left( \prod_{i=1}^{10} \theta_i \right)^{\alpha^*} }{ \frac{\beta^{10\alpha^{(t-1)}}}{\Gamma(\alpha^{(t-1)})^{10}} \left( \prod_{i=1}^{10} \theta_i \right)^{\alpha^{(t-1)}} }$$
+
+Simplify,
+$$r = \left( \frac{\Gamma(\alpha^{(t-1)})}{\Gamma(\alpha^*)} \right)^{10} \beta^{10(\alpha^* - \alpha^{(t-1)})} \left( \prod_{i=1}^{10} \theta_i \right)^{\alpha^* - \alpha^{(t-1)}}$$
+Our acceptance conditition is $\min(1, r)$.
 
 # Question 4 (30 points)
 
@@ -97,18 +132,217 @@ $\alpha|\beta,\boldsymbol{\theta},\boldsymbol{y}$, you should also give
 the values of any tuning parameter that you used and the acceptance rate
 you get with that value.
 
+```{r}
+# Read in data
+row_idx <- 1
+
+b_cols <- paste0("b", 1:10)
+v_cols <- paste0("v", 1:10)
+
+b <- as.numeric(df[row_idx, b_cols])
+v <- as.numeric(df[row_idx, v_cols])
+
+y <- b + v
+n <- length(y)
+```
+
+```{r}
+run_chain <- function(start_alpha, start_beta, tune_sd, num_iters) {
+  # Setup storage (numeric() is slightly faster than rep(NA))
+  alpha <- numeric(num_iters)
+  beta  <- numeric(num_iters)
+  theta <- matrix(NA_real_, nrow = num_iters, ncol = n)
+  
+  # Initialize
+  alpha[1] <- start_alpha
+  beta[1]  <- start_beta
+  theta[1,] <- rgamma(n, shape = y + alpha[1], rate = 1 + beta[1])
+  
+  accept_count <- 0
+  
+  # Caching the log-gamma of alpha to avoid recalculating it every loop
+  current_lgamma_alpha <- lgamma(alpha[1]) 
+  
+  for (t in 2:num_iters) {
+    # Fetch previous values to avoid repeated indexing
+    prev_alpha <- alpha[t-1]
+    prev_beta <- beta[t-1]
+    
+    # Step 1: Sample theta (Store in a temporary variable first)
+    current_theta <- rgamma(n, shape = y + prev_alpha, rate = 1 + prev_beta)
+    theta[t,] <- current_theta
+    
+    # Step 2: Sample beta 
+    current_beta <- rgamma(1, shape = n * prev_alpha + 1, rate = sum(current_theta))
+    beta[t] <- current_beta
+    
+    # Step 3: Sample alpha 
+    alpha_star <- rnorm(1, mean = prev_alpha, sd = tune_sd)
+    
+    if (alpha_star <= 0) {
+      alpha[t] <- prev_alpha
+    } else {
+      # Calculate lgamma for the proposal
+      lgamma_alpha_star <- lgamma(alpha_star)
+      
+      # Compute log-ratio using the cached lgamma and temporary variables
+      log_r <- n * (current_lgamma_alpha - lgamma_alpha_star) +
+               n * (alpha_star - prev_alpha) * log(current_beta) +
+               (alpha_star - prev_alpha) * sum(log(current_theta))
+      
+      # Accept or reject
+      if (log(runif(1)) < log_r) {
+        alpha[t] <- alpha_star
+        current_lgamma_alpha <- lgamma_alpha_star # Cache the new value for the next iteration!
+        accept_count <- accept_count + 1
+      } else {
+        alpha[t] <- prev_alpha
+      }
+    }
+  }
+  
+  accept_rate <- accept_count / (num_iters - 1)
+  return(list(alpha = alpha, beta = beta, theta = theta, accept_rate = accept_rate))
+}
+
+# Run multiple chains with different starting values
+num_iters <- 3000
+tune_sd <- 3.8  # <- TUNING PARAMETER
+
+set.seed(4420)
+chain1 <- run_chain(start_alpha = 1, start_beta = 1, tune_sd = tune_sd, num_iters = num_iters)
+chain2 <- run_chain(start_alpha = 10, start_beta = 5, tune_sd = tune_sd, num_iters = num_iters)
+
+# Acceptance Rates
+cat("Chain 1 Acceptance Rate:", round(chain1$accept_rate, 3), "\n")
+cat("Chain 2 Acceptance Rate:", round(chain2$accept_rate, 3), "\n")
+
+# 4. Convergence Plots
+plot.frame <- data.frame(
+  iterations = 1:num_iters,
+  alpha_1 = chain1$alpha, alpha_2 = chain2$alpha,
+  beta_1  = chain1$beta,  beta_2  = chain2$beta
+)
+
+plot_list <- vector("list", length = 2)
+
+# Plot for Alpha
+p1 <- ggplot(plot.frame) +
+  geom_line(aes(x = iterations, y = alpha_1), col = "red", alpha = 0.7) +
+  geom_line(aes(x = iterations, y = alpha_2), col = "blue", alpha = 0.7) +
+  labs(title = "Trace Plot for Alpha", y = "Alpha", x = "Iteration")
+plot_list[[1]] <- p1
+
+# Plot for Beta
+p2 <- ggplot(plot.frame) +
+  geom_line(aes(x = iterations, y = beta_1), col = "red", alpha = 0.7) +
+  geom_line(aes(x = iterations, y = beta_2), col = "blue", alpha = 0.7) +
+  labs(title = "Trace Plot for Beta", y = "Beta", x = "Iteration")
+plot_list[[2]] <- p2
+
+grid.arrange(plot_list[[1]], plot_list[[2]], ncol = 1)
+```
+The goal of acceptance is usually around 50%, when the tuning parameter, SD was at 0.5, the acceptance values were around 75-80% for each of the chains, so I needed to modify it.
+
+I increased the SD tuning parameter to 1.5 and got an acceptance rate of around 50% for each chain.
+
+Apparently there is an optimal amount of acceptance: [https://arxiv.org/html/2408.06894v1](https://arxiv.org/html/2408.06894v1), so I will be tuning it even further.
+
+I made the SD 3.8, and got an acceptance value of 0.239 and 0.232 for each chain.
+
+
 # Question 5 (10 points)
 
 Give autocorrelation plots for each parameter from the chains you ran in
 Question 4 (after removing the burn-in iterations). How much thinning
 was needed to obtain independent samples?
 
+```{r}
+set.seed(42
+         )
+# 1. Define Burn-in and Total Iterations, rerun chains
+burn_in <- 500
+num_iters <- 65500 # to ensure we end up with 1000 samples
+
+chain1 <- run_chain(start_alpha = 1, start_beta = 1, tune_sd = 3.8, num_iters = num_iters)
+chain2 <- run_chain(start_alpha = 10, start_beta = 5, tune_sd = 3.8, num_iters = num_iters)
+
+# 2. Discard Burn-in and Combine Chains
+alpha_post <- c(chain1$alpha[(burn_in + 1):num_iters], chain2$alpha[(burn_in + 1):num_iters])
+beta_post  <- c(chain1$beta[(burn_in + 1):num_iters],  chain2$beta[(burn_in + 1):num_iters])
+
+# Since theta is a matrix (n columns), we use rbind instead of c()
+theta_post <- rbind(chain1$theta[(burn_in + 1):num_iters, ], 
+                    chain2$theta[(burn_in + 1):num_iters, ])
+
+total_post_samples <- length(alpha_post) # Should be 5000 (2500 from each chain)
+
+# 3. Plot Autocorrelation for the un-thinned chains
+p1 <- ggAcf(alpha_post, lag.max = 150) + labs(title = "ACF for Alpha")
+p2 <- ggAcf(beta_post, lag.max = 150) + labs(title = "ACF for Beta")
+grid.arrange(p1, p2, ncol = 1)
+```
+
+After thinning by taking every $130^{th}$ sample, the autocorrelation decreased to nearly 0.
+```{r}
+# 4. Thin the chains
+thin_interval <- 130
+thin_indices <- seq(from = thin_interval, to = total_post_samples, by = thin_interval)
+
+alpha_final <- alpha_post[thin_indices]
+beta_final  <- beta_post[thin_indices]
+theta_final <- theta_post[thin_indices, ]
+
+# 5. Verify the thinning worked
+p3 <- ggAcf(alpha_final) + labs(title = "ACF for Alpha (Thinned)")
+p4 <- ggAcf(beta_final) + labs(title = "ACF for Beta (Thinned)")
+grid.arrange(p3, p4, ncol = 1)
+
+# Number of independent samples
+print(length(alpha_final))
+```
+
+
 # Question 6 (15 points)
 
 Calculate the posterior means and 95% posterior intervals for a, and
 each $\theta_{i}$ and provide these values in a table.
 
+```{r}
+# Calculate the mean and 95% CI for Alpha
+alpha_mean <- mean(alpha_final)
+alpha_ci <- quantile(alpha_final, probs = c(0.025, 0.975))
+
+# Calculate the means and 95% CIs for all 10 Theta parameters
+theta_means <- apply(theta_final, 2, mean)
+theta_cis <- apply(theta_final, 2, quantile, probs = c(0.025, 0.975))
+
+summary_table <- data.frame(
+  Parameter = c("Alpha", paste0("Theta_", 1:10)),
+  Mean = round(c(alpha_mean, theta_means), 3),
+  `Lower_2.5` = round(c(alpha_ci[1], theta_cis[1, ]), 3),
+  `Upper_97.5` = round(c(alpha_ci[2], theta_cis[2, ]), 3)
+)
+
+summary_table
+```
+
+
 # Question 7 (15 points)
 
 Use your posterior samples to calculate a 95% predictive interval for
 the total traffic on a new residential street with a bike lane.
+
+```{r}
+num_samples <- length(alpha_final)
+
+theta_new <- rgamma(num_samples, shape = alpha_final, rate = beta_final)
+
+y_new <- rpois(num_samples, lambda = theta_new)
+
+predictive_interval <- quantile(y_new, probs = c(0.025, 0.975))
+
+cat("95% Predictive Interval for total traffic on a new residential street with a bike lane:\n")
+print(predictive_interval)
+```
+
